@@ -50,7 +50,7 @@ foreach ($c in $ComputerName) {
 				$localInstaller = "$localInstallFolder\Setup.exe"
 				$localInfFile = "$localInstallFolder\silentnstall.inf"
 
-				Start-Process $using:localInstaller -Args "/verysilent /loadinf=`"$using:localInfFile`"" -Wait -NoNewWindow
+				Start-Process $localInstaller -Args "/verysilent /loadinf=`"$localInfFile`"" -Wait -NoNewWindow
 			}
 			Invoke-Command -ComputerName $c -ScriptBlock $scriptBlock -Credential $Credential
 		}
