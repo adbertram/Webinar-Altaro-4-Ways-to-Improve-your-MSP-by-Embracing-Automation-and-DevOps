@@ -3,7 +3,8 @@
 		This function deploys the UltraVNC software package to a remote computer.
 		
 	.EXAMPLE
-		PS> Deploy-VNC -ComputerName CLIENT1 -InstallFolder \\MEMBERSRV1\VNC
+		PS> $cred = Get-Credential
+		PS> .\Deploy-VNC.ps1 -ComputerName CLIENT1 -InstallFolder \\MEMBERSRV1\VNC -Credential $cred
 	
 		This example copies all files from \\MEMBERSRV1\VNC which should contain a file called setup.exe representing the UltraVNC
 		installer and silentinstall.inf representing the UltraVNC silent install answer file. These files will be copied to
@@ -34,37 +35,48 @@ param
 	[pscredential]$Credential
 )
 	
-$installFolderName = $InstallerFolderPath.Split('\')[-1]
-	
 foreach ($c in $ComputerName) {
-	try {
-		$jobBlock = {
+	Write-Verbose -Message "Starting deployment job on [$c]..."
+	$jobBlock = {
+		try {
+			$installFolderName = $args[0] | Split-Path -Leaf
 			$uncInstallerFolder = "\\$c\c$\$installFolderName"
-			Copy-Item -Path $InstallerFolderPath -Destination "\\$c\c$" -Recurse
+			Copy-Item -Path $args[0] -Destination "\\$($args[1])\c$" -Recurse -Force
 					
 			$scriptBlock = { 
 				$VerbosePreference = $using:VerbosePreference
 					
 				## Remotely invoke the VNC installer on the computer
-				$localInstallFolder = "C:\$using:installFolderName".TrimEnd('\')
+				$localInstallFolder = "C:\$($args[2])"
 				$localInstaller = "$localInstallFolder\Setup.exe"
-				$localInfFile = "$localInstallFolder\silentnstall.inf"
+				$localInfFile = "$localInstallFolder\silentinstall.inf"
 
+				Write-Host "Running installer [$localInstaller]..."
 				Start-Process $localInstaller -Args "/verysilent /loadinf=`"$localInfFile`"" -Wait -NoNewWindow
 			}
-			Invoke-Command -ComputerName $c -ScriptBlock $scriptBlock -Credential $Credential
+			$icmParams = @{
+				ComputerName = $args[1]
+				ScriptBlock  = $scriptBlock
+				Credential   = $args[2]
+				ArgumentList = $args[0], $args[1], $installFolderName
+			}
+			Invoke-Command @icmParams
+		} catch {
+			$PSCmdlet.ThrowTerminatingError($_)
+		} finally {
+			$remoteInstallFolder = "\\$c\c$\$installFolderName"
+			Remove-Item $remoteInstallFolder -Recurse -ErrorAction Ignore
 		}
-		$jobs = Start-Job -ScriptBlock $jobBlock
-			
-	} catch {
-		$PSCmdlet.ThrowTerminatingError($_)
-	} finally {
-		$remoteInstallFolder = "\\$c\c$\$installFolderName"
-		Write-Verbose -Message "Cleaning up VNC install bits at [$($remoteInstallFolder)]"
-		Remove-Item $remoteInstallFolder -Recurse -ErrorAction Ignore
 	}
-}
-while ($jobs | Where-Object { $_.State -eq 'Running'}) {
-	Write-Verbose -Message "Waiting for all computers to finish..."
-	Start-Sleep -Second 1
+	$jobs = Start-Job -ScriptBlock $jobBlock -ArgumentList $InstallerFolderPath, $c, $Credential
+	while ($jobs | Where-Object { $_.State -eq 'Running'}) {
+		Write-Verbose -Message "Waiting for all computers to finish..."
+		Start-Sleep -Second 1
+	}
+
+	## Get the job output
+	$jobs | Receive-Job
+
+	## Cleanup the jobs
+	$jobs | Remove-Job
 }
