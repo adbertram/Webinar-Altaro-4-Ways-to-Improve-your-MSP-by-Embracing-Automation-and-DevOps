@@ -3,8 +3,7 @@
 		This function deploys the UltraVNC software package to a remote computer.
 		
 	.EXAMPLE
-		PS> $cred = Get-Credential
-		PS> .\Deploy-VNC.ps1 -ComputerName CLIENT1 -InstallFolder \\MEMBERSRV1\VNC -Credential $cred
+		PS> .\Deploy-VNC.ps1 -ComputerName CLIENT1 -InstallFolder \\MEMBERSRV1\VNC
 	
 		This example copies all files from \\MEMBERSRV1\VNC which should contain a file called setup.exe representing the UltraVNC
 		installer and silentinstall.inf representing the UltraVNC silent install answer file. These files will be copied to
@@ -15,9 +14,6 @@
 	
 	.PARAMETER InstallerFolderPath
 		The folder that contains the UltraVNC installer (setup.exe) and the UltraVNC answer file (silentinstall.inf). This is mandatory.
-
-	.PARAMETER Credential
-		A PSCredential object representing alternate username and password to connect to the remote computer.
 	#>
 [CmdletBinding()]
 param
@@ -29,20 +25,11 @@ param
 	[Parameter(Mandatory)]
 	[ValidateNotNullOrEmpty()]
 	[ValidateScript({ Test-Path -Path $_ -PathType Container })]
-	[string]$InstallerFolderPath,
-
-	[Parameter(Mandatory)]
-	[pscredential]$Credential
+	[string]$InstallerFolderPath
 )
 
 $jobs = @()
 foreach ($c in $ComputerName) {
-
-	## Save credential to local cached credentials
-	if ((cmdkey /list:($c)) -match '\* NONE \*') {
-		$null = cmdkey /add:$c /user:($Credential.UserName) /pass:($Credential.GetNetworkCredential().Password)
-	}
-
 	Write-Verbose -Message "Starting deployment job on [$c]..."
 	$jobBlock = {
 		try {
@@ -58,7 +45,6 @@ foreach ($c in $ComputerName) {
 				$localInstaller = "$localInstallFolder\Setup.exe"
 				$localInfFile = "$localInstallFolder\silentinstall.inf"
 
-				Write-Host "Running installer [$localInstaller]..."
 				Start-Process $localInstaller -Args "/verysilent /loadinf=`"$localInfFile`"" -Wait -NoNewWindow
 			}
 			$icmParams = @{
@@ -74,15 +60,17 @@ foreach ($c in $ComputerName) {
 			Remove-Item $remoteInstallFolder -Recurse -ErrorAction Ignore
 		}
 	}
-	$jobs += Start-Job -ScriptBlock $jobBlock -ArgumentList $InstallerFolderPath
-	while ($jobs | Where-Object { $_.State -eq 'Running'}) {
-		Write-Verbose -Message "Waiting for all computers to finish..."
-		Start-Sleep -Second 5
-	}
-
-	## Get the job output
-	$jobs | Receive-Job
-
-	## Cleanup the jobs
-	$jobs | Remove-Job
+	$jobs += Start-Job -ScriptBlock $jobBlock -ArgumentList $InstallerFolderPath, $c
 }
+while ($jobs | Where-Object { $_.State -eq 'Running'}) {
+	Write-Verbose -Message "Waiting for all computers to finish..."
+	Start-Sleep -Second 5
+}
+
+## Get the job output
+$jobs | Receive-Job
+
+## Cleanup the jobs
+$jobs | Remove-Job
+
+Write-Verbose -Message 'Done.'
