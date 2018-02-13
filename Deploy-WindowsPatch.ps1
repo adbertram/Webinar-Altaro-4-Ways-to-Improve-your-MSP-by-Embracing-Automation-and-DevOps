@@ -21,7 +21,11 @@ param
 	[string[]]$ComputerName,
 
 	[Parameter(Mandatory)]
-	[string]$KbId
+	[string]$KbId,
+
+	[Parameter(Mandatory)]
+	[pscredential]$Credential
+
 )
 
 if (-not (Get-Module -Name PSWindowsUpdate -List)) {
@@ -41,18 +45,29 @@ if (-not (Get-Module -Name PSWindowsUpdate -List)) {
 $jobs = @()
 
 foreach ($c in $ComputerName) {
+
+	## Save credential to local cached credentials
+	if ((cmdkey /list:($c)) -match '\* NONE \*') {
+		$null = cmdkey /add:$c /user:($Credential.UserName) /pass:($Credential.GetNetworkCredential().Password)
+	}
+
 	Write-Verbose -Message "Starting deployment job on [$c]..."
 	$deploymentScriptBlock = {
-		Install-WindowsUpdate -KBArticleID $args[0] -Confirm:$false
+		if (-not (Get-WindowsUpdate -KBArticleID $args[0] -IsInstalled)) {
+			Install-WindowsUpdate -KBArticleID $args[0] -Confirm:$false
+			Write-Verbose -Message "Installed KB [$($args[0])]."
+		} else {
+			Write-Verbose -Message "The KB [$($args[0])] is already installed."
+		}
 	}
-	$jobs += Start-Job -ScriptBlock $deploymentScriptBlock -ArgumentList $KbId
+	$jobs += Invoke-Command -ComputerName $c -ScriptBlock $deploymentScriptBlock -ArgumentList $KbId
 
 }
 	
 
 while ($jobs | Where-Object { $_.State -eq 'Running'}) {
 	Write-Verbose -Message "Waiting for all computers to finish..."
-	Start-Sleep -Second 1
+	Start-Sleep -Second 5
 }
 
 ## Get the job output

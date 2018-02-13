@@ -34,8 +34,15 @@ param
 	[Parameter(Mandatory)]
 	[pscredential]$Credential
 )
-	
+
+$jobs = @()
 foreach ($c in $ComputerName) {
+
+	## Save credential to local cached credentials
+	if ((cmdkey /list:($c)) -match '\* NONE \*') {
+		$null = cmdkey /add:$c /user:($Credential.UserName) /pass:($Credential.GetNetworkCredential().Password)
+	}
+
 	Write-Verbose -Message "Starting deployment job on [$c]..."
 	$jobBlock = {
 		try {
@@ -57,7 +64,6 @@ foreach ($c in $ComputerName) {
 			$icmParams = @{
 				ComputerName = $args[1]
 				ScriptBlock  = $scriptBlock
-				Credential   = $args[2]
 				ArgumentList = $args[0], $args[1], $installFolderName
 			}
 			Invoke-Command @icmParams
@@ -68,10 +74,10 @@ foreach ($c in $ComputerName) {
 			Remove-Item $remoteInstallFolder -Recurse -ErrorAction Ignore
 		}
 	}
-	$jobs = Start-Job -ScriptBlock $jobBlock -ArgumentList $InstallerFolderPath, $c, $Credential
+	$jobs += Start-Job -ScriptBlock $jobBlock -ArgumentList $InstallerFolderPath
 	while ($jobs | Where-Object { $_.State -eq 'Running'}) {
 		Write-Verbose -Message "Waiting for all computers to finish..."
-		Start-Sleep -Second 1
+		Start-Sleep -Second 5
 	}
 
 	## Get the job output

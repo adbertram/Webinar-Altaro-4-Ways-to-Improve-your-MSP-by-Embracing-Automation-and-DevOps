@@ -1,6 +1,12 @@
+<#
+Ensure the Azure VMs CLIENTJUMP, CLIENTSERVER1 and CLIENTSERVER2 are started
+RDP to CLIENTJUMP (user: adam, password: I like azure.)
+#>
+
+
 #region Demo 1
 ## Deploy a new zero-day KB patch to multiple computers
-& "$PSScriptRoot\Deploy-WindowsPatch.ps1" -ComputerName 'CLIENTSERVER1', 'CLIENTSERVER2' -Verbose
+& "$PSScriptRoot\Deploy-WindowsPatch.ps1" -ComputerName 'CLIENTSERVER1', 'CLIENTSERVER2' -KbId 'KB4052623' -Verbose
 
 ## Deploy VNC to a couple of computers
 $credential = Get-Credential
@@ -8,7 +14,17 @@ $credential = Get-Credential
 #endregion
 
 #region Demo 2
-GUI based -- appveyor and PSADSync
+
+<# 
+	Intro Github PSADSync repo
+	Intro AppVeyor
+	Find-Module -Name PSADSync -- notice version
+	Show build scripts
+	Commit change to PSAdSync module
+	Show AppVeyor build
+	Find-Module -Name PSADSync -- notice version
+#>
+
 #endregion
 
 #region Demo 3
